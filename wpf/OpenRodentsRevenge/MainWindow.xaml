@@ -40,7 +40,7 @@
             <TextBlock Foreground="#E0E0E0" TextWrapping="Wrap" TextAlignment="Center"
                        FontSize="12" MaxWidth="640">
                 <Run FontWeight="Bold" Foreground="#FFD24A">How to play:</Run>
-                <Run Text=" Move with the "/><Run FontWeight="Bold">arrow keys</Run><Run Text=". Push blocks to surround the cats — trap one completely and it turns into cheese. Clear every cat to reach the next level. "/>
+                <Run Text=" Move with the "/><Run FontWeight="Bold">arrow keys</Run><Run Text=". Push blocks to surround the cats. Trap one completely and it turns into cheese. Clear every cat to reach the next level. "/>
                 <Run FontWeight="Bold" Foreground="#FF8A8A">A keyboard is required.</Run>
             </TextBlock>
         </Border>

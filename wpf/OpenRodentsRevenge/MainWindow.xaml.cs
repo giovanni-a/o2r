@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using Microsoft.Win32;
@@ -10,6 +11,7 @@ using OpenRodentsRevenge.Game;
 using OpenRodentsRevenge.Logging;
 using OpenRodentsRevenge.Managers;
 using OpenRodentsRevenge.Map;
+using OpenRodentsRevenge.Rendering;
 using ORDialogs = OpenRodentsRevenge.Dialogs;
 
 namespace OpenRodentsRevenge;
@@ -74,6 +76,11 @@ public partial class MainWindow : Window
         // runs before this one since it was registered first).
         mGameCanvas.Loaded += OnCanvasFirstLoaded;
 
+        // Keyboard is handled at the window level (tunneling) so the arrow keys
+        // always reach the game regardless of which child has focus, and so it
+        // mirrors how an OpenSilver page wires up key handling.
+        PreviewKeyDown += OnWindowKeyDown;
+
         Closing += (_, _) => Logger.Info("Closing Open Rodent's Revenge.");
 
         Logger.Info($"Open Rodent's Revenge version {VERSION} started.");
@@ -116,7 +123,6 @@ public partial class MainWindow : Window
 
     private void AddEditorBarButton(char c, string tip, string textureAlias)
     {
-        Brush? brush = AssetsManager.GetTexture(textureAlias)?.Brush;
         var button = new ToggleButton
         {
             Tag = c,
@@ -124,15 +130,33 @@ public partial class MainWindow : Window
             Width = 28,
             Height = 28,
             Margin = new Thickness(1),
-            Content = new Rectangle
-            {
-                Width = 22,
-                Height = 22,
-                Fill = brush ?? Brushes.Transparent,
-            },
+            Content = MakeSwatch(c, textureAlias),
         };
         button.Click += OnEditorBarActionTriggered;
         editorBar.Items.Add(button);
+    }
+
+    /// <summary>
+    /// Build a 22x22 preview for an editor tool: the entity visual for the mouse
+    /// tool, or a solid colour matching how the tile is drawn on the map.
+    /// </summary>
+    private static FrameworkElement MakeSwatch(char c, string textureAlias)
+    {
+        FrameworkElement? entity = EntityVisuals.Create(textureAlias);
+        if (entity != null)
+            return new Viewbox { Width = 22, Height = 22, Child = entity };
+
+        Color fill;
+        if (textureAlias == "void.png")
+        {
+            fill = TilePalette.GroundColor;
+        }
+        else
+        {
+            TileInfo info = TilesTypesManager.TileInfoFromChar(c);
+            fill = info.IsValid ? TilePalette.Appearance(info).fill : Colors.Transparent;
+        }
+        return new Rectangle { Width = 22, Height = 22, Fill = new SolidColorBrush(fill) };
     }
 
     private void SwitchToGameMode(GameMode mode)
@@ -177,6 +201,14 @@ public partial class MainWindow : Window
         StartCampaignLevel(0);
     }
 
+    private void OnWindowKeyDown(object sender, KeyEventArgs e)
+    {
+        mGameCanvas?.HandleKey(e.Key);
+        // Keep the arrow keys for the game (prevent focus/scroll navigation).
+        if (e.Key is Key.Up or Key.Down or Key.Left or Key.Right)
+            e.Handled = true;
+    }
+
     private void OnActionNewGame(object sender, RoutedEventArgs e)
     {
         StartCampaignLevel(0);
@@ -201,7 +233,6 @@ public partial class MainWindow : Window
         mCampaignIndex = index;
         mGameCanvas.SetLevel(level);
         ((GameScreen)mGameScreen).PrepareCats(def.CatCount);
-        mGameCanvas.Focus();
         if (!mGameCanvas.SetScreen(mGameScreen))
         {
             CriticalError($"Cannot play level \"{def.Name}\".");
@@ -226,7 +257,6 @@ public partial class MainWindow : Window
         if (!string.IsNullOrEmpty(path) && mGameCanvas.LoadLevel(path))
         {
             ((GameScreen)mGameScreen).PrepareCats(DEFAULT_FILE_CAT_COUNT);
-            mGameCanvas.Focus();
             mGameCanvas.SetScreen(mGameScreen);
             SwitchToGameMode(GameMode.PLAY);
         }
@@ -303,7 +333,6 @@ public partial class MainWindow : Window
         {
             mCampaignIndex = -1; // not a campaign level
             ((GameScreen)mGameScreen).PrepareCats(DEFAULT_FILE_CAT_COUNT);
-            mGameCanvas.Focus();
             if (!mGameCanvas.SetScreen(mGameScreen))
             {
                 CriticalError($"Cannot play level \"{path}\".");
@@ -358,7 +387,6 @@ public partial class MainWindow : Window
             return;
         if (mGameCanvas.LoadLevel(path))
         {
-            mGameCanvas.Focus();
             if (!mGameCanvas.SetScreen(mEditorScreen))
             {
                 CriticalError($"Cannot edit level \"{path}\".");

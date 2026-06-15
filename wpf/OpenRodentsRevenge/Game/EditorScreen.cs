@@ -1,28 +1,31 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
 using OpenRodentsRevenge.Common;
 using OpenRodentsRevenge.Entities;
 using OpenRodentsRevenge.Logging;
 using OpenRodentsRevenge.Managers;
 using OpenRodentsRevenge.Map;
+using OpenRodentsRevenge.Rendering;
 
 namespace OpenRodentsRevenge.Game;
 
 /// <summary>
-/// The editor screen. Direct port of the original <c>EditorScreen</c> class.
+/// The editor screen. Port of the original <c>EditorScreen</c> class.
 /// </summary>
 public class EditorScreen : Screen
 {
     public const char MOUSE_POS_CHAR = 'm';
-    private static readonly Color MOUSE_POS_INDICATOR_COLOR = Color.FromArgb(200, 50, 50, 50);
+    private const double INDICATOR_OPACITY = 0.55;
 
     private char mPlaceableChar;
     private bool mPlaceableCharUpdated;
     private Vec2i mLastPlacedPos;
 
-    // The original used an sf::Sprite tinted by MOUSE_POS_INDICATOR_COLOR.
-    private Brush? mIndicatorBrush;
+    // The original used an sf::Sprite tinted by a dark, semi-transparent colour.
+    // Here it is a retained, semi-transparent mouse visual repositioned in Sync.
+    private Canvas? mLayer;
+    private FrameworkElement? mIndicator;
     private Vec2i mIndicatorPixelPos;
 
     public EditorScreen(IGameView window)
@@ -33,13 +36,36 @@ public class EditorScreen : Screen
         mLastPlacedPos = new Vec2i(-1, -1);
     }
 
-    public override void Render(DrawingContext dc)
+    public override void OnAttach(Canvas entityLayer)
     {
-        if (mLevelPtr == null)
+        mLayer = entityLayer;
+        mIndicator = EntityVisuals.Create("mouse.png");
+        if (mIndicator != null)
+        {
+            mIndicator.Opacity = INDICATOR_OPACITY;
+            mLayer.Children.Add(mIndicator);
+        }
+        Sync();
+    }
+
+    public override void OnDetach(Canvas entityLayer)
+    {
+        if (mIndicator != null)
+            entityLayer.Children.Remove(mIndicator);
+        mIndicator = null;
+        mLayer = null;
+    }
+
+    public override void Sync()
+    {
+        if (mIndicator == null || mLevelPtr == null)
             return;
-        mLevelPtr.Draw(dc);
-        if (!mLevelPtr.Info.MouseRandomPos)
-            DrawMousePosIndicator(dc);
+        bool show = !mLevelPtr.Info.MouseRandomPos;
+        mIndicator.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        if (!show)
+            return;
+        Canvas.SetLeft(mIndicator, mIndicatorPixelPos.X);
+        Canvas.SetTop(mIndicator, mIndicatorPixelPos.Y);
     }
 
     public override void Update(double dt)
@@ -86,11 +112,9 @@ public class EditorScreen : Screen
             return false;
         Logger.Info($"EditorScreen : started editing level (name = \"{level!.Info.Name}\", filepath = \"{level.Info.FilePath}\").");
 
-        // Init the mouse start position indicator (but shown only if needed)
-        Texture? texturePtr = AssetsManager.GetTexture("mouse.png");
-        if (texturePtr == null)
+        // Init the mouse start position indicator (but shown only if needed).
+        if (AssetsManager.GetTexture("mouse.png") == null)
             return false;
-        mIndicatorBrush = texturePtr.Brush;
         RelocateMousePosIndicator();
 
         return true;
@@ -118,18 +142,5 @@ public class EditorScreen : Screen
             mLevelPtr.SetTileChar(mousePos.X, mousePos.Y, '0', true, true);
         mIndicatorPixelPos = new Vec2i(mousePos.X * TiledEntity.TILE_SIZE,
                                        mousePos.Y * TiledEntity.TILE_SIZE);
-    }
-
-    private void DrawMousePosIndicator(DrawingContext dc)
-    {
-        if (mIndicatorBrush == null)
-            return;
-        var rect = new Rect(mIndicatorPixelPos.X, mIndicatorPixelPos.Y,
-                            TiledEntity.TILE_SIZE, TiledEntity.TILE_SIZE);
-        // Emulate the original sf::Sprite tinted by a dark, semi-transparent color.
-        dc.PushOpacity(MOUSE_POS_INDICATOR_COLOR.A / 255.0);
-        dc.DrawRectangle(mIndicatorBrush, null, rect);
-        dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(120, 50, 50, 50)), null, rect);
-        dc.Pop();
     }
 }

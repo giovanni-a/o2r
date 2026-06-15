@@ -1,6 +1,6 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
 using System.Windows.Threading;
 using OpenRodentsRevenge.Common;
 using OpenRodentsRevenge.Entities;
@@ -8,47 +8,60 @@ using OpenRodentsRevenge.Factories;
 using OpenRodentsRevenge.Logging;
 using OpenRodentsRevenge.Managers;
 using OpenRodentsRevenge.Map;
+using OpenRodentsRevenge.Rendering;
 
 namespace OpenRodentsRevenge.Game;
 
 /// <summary>
-/// The Game canvas, where the whole game is rendered. Actual game logic lives in
-/// the <see cref="Screen"/> subclasses.
+/// The game surface, where the whole game is rendered. Actual game logic lives
+/// in the <see cref="Screen"/> subclasses.
 ///
-/// Port of the original <c>GameCanvas</c> (which derived from a SFML-in-Qt
-/// widget). Here it is a WPF <see cref="FrameworkElement"/> driven by
-/// <see cref="CompositionTarget.Rendering"/> for its per-frame update, and it
-/// renders through <see cref="OnRender"/>.
+/// Port of the original <c>GameCanvas</c> (a SFML-in-Qt widget that redrew every
+/// frame). This version is a retained-mode scene built from cross-platform
+/// primitives — a <see cref="Canvas"/> holding a map layer and an entity layer —
+/// so the exact same code runs under WPF and OpenSilver. A modest
+/// <see cref="DispatcherTimer"/> advances the logic; rendering is reconciled
+/// (not repainted) and only ever touches elements that actually changed, which
+/// is what keeps it fast on OpenSilver's DOM-backed renderer.
 ///
 /// Important: <see cref="FilespathProvider"/>/<see cref="TilesTypesManager"/>
 /// must be initialized before running any screen.
 /// </summary>
-public class GameCanvas : FrameworkElement, IGameView
+public class GameCanvas : Canvas, IGameView
 {
     public static readonly uint DEFAULT_WIDTH = (uint)TiledEntity.TILE_SIZE * 32;
     public static readonly uint DEFAULT_HEIGHT = (uint)TiledEntity.TILE_SIZE * 32;
 
-    private static readonly Color DEFAULT_CLEAR_COLOR = Color.FromRgb(0, 0, 0);
-    private static readonly Brush DEFAULT_CLEAR_BRUSH = CreateFrozen(DEFAULT_CLEAR_COLOR);
+    // Logic cadence. Cats move at most a few times per second and the editor
+    // only needs to poll the mouse, so a light ~30 Hz tick is ample. Each tick
+    // is near-free when nothing changed, so this stays gentle on OpenSilver.
+    private static readonly TimeSpan FRAME_INTERVAL = TimeSpan.FromMilliseconds(33);
+
+    private readonly Canvas mMapLayer = new();
+    private readonly Canvas mEntityLayer = new();
+    private readonly MapRenderer mMapRenderer;
+    private readonly Clock mFrameClock = new();
 
     private bool mRunning;
     private TiledMap? mCurrentLevel;
     private Screen mDefaultScreen = null!;
     private Screen mCurrentScreen = null!;
-    private readonly Clock mFrameClock = new();
     private bool mInitialized;
-
-    // ~60 FPS update/render cadence. The original SFML loop ran as fast as the
-    // host would allow; an uncapped WPF render loop pegs the CPU/GPU, so we cap
-    // it here.
-    private static readonly TimeSpan FRAME_INTERVAL = TimeSpan.FromMilliseconds(16);
     private DispatcherTimer? mTimer;
 
     public GameCanvas()
     {
-        Focusable = true;
+        // The entity layer must not intercept hit-testing so the editor can read
+        // the mouse position over the (hit-testable) ground beneath it.
+        mEntityLayer.IsHitTestVisible = false;
+        Children.Add(mMapLayer);
+        Children.Add(mEntityLayer);
+        mMapRenderer = new MapRenderer(mMapLayer);
+
         Width = DEFAULT_WIDTH;
         Height = DEFAULT_HEIGHT;
+        SizeLayers();
+
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
     }
@@ -96,7 +109,8 @@ public class GameCanvas : FrameworkElement, IGameView
         if (level == null)
             return;
         mCurrentLevel = level;
-        AdjustSizeToLevel();
+        mMapRenderer.SetLevel(level);
+        AdjustSizeToLevel(); // sizes the layers and reconciles the scene
     }
 
     /// <summary>
@@ -106,10 +120,17 @@ public class GameCanvas : FrameworkElement, IGameView
     {
         if (screen == null)
             return SetScreen(mDefaultScreen);
+
+        mCurrentScreen.OnDetach(mEntityLayer);
         mCurrentScreen.Stop();
+
         mCurrentScreen = screen;
         mRunning = start;
-        return start ? mCurrentScreen.Start(mCurrentLevel) : true;
+        bool ok = start ? mCurrentScreen.Start(mCurrentLevel) : true;
+
+        mCurrentScreen.OnAttach(mEntityLayer);
+        SyncScene();
+        return ok;
     }
 
     /// <summary>
@@ -119,6 +140,8 @@ public class GameCanvas : FrameworkElement, IGameView
     {
         AssetsManager.ClearTextureCache();
         mCurrentScreen.ReloadTextures();
+        mMapRenderer.Invalidate();
+        SyncScene();
     }
 
     /// <summary>
@@ -129,11 +152,25 @@ public class GameCanvas : FrameworkElement, IGameView
     {
         if (mCurrentLevel == null)
             return;
-        int w = (int)(mCurrentLevel.SizeX * TiledEntity.TILE_SIZE),
-            h = (int)(mCurrentLevel.SizeY * TiledEntity.TILE_SIZE);
-        Width = w;
-        Height = h;
-        InvalidateVisual();
+        Width = mCurrentLevel.SizeX * TiledEntity.TILE_SIZE;
+        Height = mCurrentLevel.SizeY * TiledEntity.TILE_SIZE;
+        SizeLayers();
+        // A resize (editor) can change tiles; make sure the map re-renders.
+        mMapRenderer.Invalidate();
+        SyncScene();
+    }
+
+    /// <summary>
+    /// Dispatch a key press to the active screen (called from the host window so
+    /// input works regardless of focus, mirroring OpenSilver's page-level
+    /// keyboard handling).
+    /// </summary>
+    public void HandleKey(Key key)
+    {
+        if (!mRunning)
+            return;
+        mCurrentScreen.HandleEvent(key);
+        SyncScene(); // reflect the move immediately
     }
 
     Vec2i IGameView.GetMousePosition()
@@ -145,6 +182,14 @@ public class GameCanvas : FrameworkElement, IGameView
     bool IGameView.IsLeftMouseButtonPressed()
     {
         return System.Windows.Input.Mouse.LeftButton == MouseButtonState.Pressed && IsMouseOver;
+    }
+
+    private void SizeLayers()
+    {
+        mMapLayer.Width = Width;
+        mMapLayer.Height = Height;
+        mEntityLayer.Width = Width;
+        mEntityLayer.Height = Height;
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -171,52 +216,21 @@ public class GameCanvas : FrameworkElement, IGameView
         mDefaultScreen = new EmptyScreen(this);
         mCurrentScreen = mDefaultScreen;
         mRunning = true;
-
-        Width = DEFAULT_WIDTH;
-        Height = DEFAULT_HEIGHT;
     }
 
     private void OnUpdate()
     {
         double dt = mFrameClock.Restart();
-        // Update current Screen (if running). When idle we don't redraw at all,
-        // which keeps the app from consuming CPU while no game is in progress.
+        // When idle (no game running) we do nothing, so the app stays quiet.
         if (!mRunning)
             return;
-        // (Key events are dispatched directly from OnKeyDown, mirroring the
-        // original event polling loop.)
         mCurrentScreen.Update(dt);
-        // Request a repaint (clearing + rendering happens in OnRender).
-        InvalidateVisual();
+        SyncScene();
     }
 
-    protected override void OnKeyDown(KeyEventArgs e)
+    private void SyncScene()
     {
-        base.OnKeyDown(e);
-        if (mRunning)
-            mCurrentScreen.HandleEvent(e.Key);
-        // Prevent the arrow keys from being consumed by WPF focus navigation,
-        // which would otherwise move keyboard focus away from the canvas.
-        if (e.Key is Key.Up or Key.Down or Key.Left or Key.Right)
-            e.Handled = true;
-    }
-
-    protected override void OnRender(DrawingContext dc)
-    {
-        // Clear previous render
-        dc.DrawRectangle(DEFAULT_CLEAR_BRUSH, null, new Rect(0, 0, Width, Height));
-        mCurrentScreen?.Render(dc);
-    }
-
-    protected override Size MeasureOverride(Size availableSize)
-    {
-        return new Size(Width, Height);
-    }
-
-    private static Brush CreateFrozen(Color color)
-    {
-        var brush = new SolidColorBrush(color);
-        brush.Freeze();
-        return brush;
+        mMapRenderer.Sync();
+        mCurrentScreen.Sync();
     }
 }

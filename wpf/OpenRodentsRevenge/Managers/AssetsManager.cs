@@ -8,13 +8,30 @@ namespace OpenRodentsRevenge.Managers;
 /// their resolved path, loading them lazily on first request.
 ///
 /// The original resolved an alias to a file path via <see cref="FilespathProvider"/>
-/// and loaded it from disk. Here the "loading" step builds a vector sprite (see
-/// <see cref="SpriteLibrary"/>); everything else (caching, null on failure,
-/// cache clearing) is preserved.
+/// and loaded the image from disk; a missing/invalid file yielded a null
+/// texture. Here "loading" is just validating that the alias is one of the
+/// known sprites (the actual visuals are produced by the renderer). Everything
+/// else (caching, null on failure, cache clearing) is preserved so the rest of
+/// the game keeps treating a null texture as "asset missing".
 /// </summary>
 public static class AssetsManager
 {
     private static readonly Dictionary<string, Texture?> TEXTURE_MAP = new();
+
+    // The set of aliases this port knows how to render. Equivalent to "an image
+    // file with this name exists in the active mod" in the original.
+    private static readonly HashSet<string> KNOWN_ALIASES = new(StringComparer.Ordinal)
+    {
+        "void.png",
+        "block.png",
+        "wall.png",
+        "mouse.png",
+        "cat.png",
+        "cat_awaiting.png",
+        "cheese.png",
+        "mousetrap.png",
+        "hole.png",
+    };
 
     /// <summary>
     /// Get a texture (load it if not already done).
@@ -44,6 +61,11 @@ public static class AssetsManager
     }
 
     /// <summary>
+    /// Is the given alias a known/renderable sprite?
+    /// </summary>
+    public static bool IsKnownAlias(string alias) => KNOWN_ALIASES.Contains(alias);
+
+    /// <summary>
     /// Clear the texture cache. All used textures should be reloaded through
     /// <see cref="GetTexture"/> then.
     /// </summary>
@@ -56,8 +78,7 @@ public static class AssetsManager
     private static Texture? LoadTexture(string path)
     {
         // The resolved path is, for this port, simply the alias (see
-        // FilespathProvider). Build a vector sprite from it.
-        var brush = SpriteLibrary.CreateBrush(path);
-        return brush != null ? new Texture(path, brush) : null;
+        // FilespathProvider). The "load" succeeds if it is a known sprite.
+        return KNOWN_ALIASES.Contains(path) ? new Texture(path) : null;
     }
 }

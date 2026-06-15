@@ -1,10 +1,10 @@
+using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
 using OpenRodentsRevenge.Common;
 using OpenRodentsRevenge.Entities;
 using OpenRodentsRevenge.Logging;
-using OpenRodentsRevenge.Managers;
 using OpenRodentsRevenge.Map;
+using OpenRodentsRevenge.Rendering;
 using Mouse = OpenRodentsRevenge.Entities.Mouse;
 
 namespace OpenRodentsRevenge.Game;
@@ -22,6 +22,12 @@ public class GameScreen : Screen
     private readonly Mouse mMouse = new(0, 0);
     private readonly List<Cat> mCats = new();
     private readonly List<Trap> mTraps = new();
+
+    // Retained visuals (created in OnAttach, reconciled in Sync).
+    private Canvas? mLayer;
+    private EntitySprite? mMouseSprite;
+    private readonly List<EntitySprite> mCatSprites = new();
+    private readonly List<EntitySprite> mTrapSprites = new();
 
     private uint levelSizeX, levelSizeY;
     private int mCatCountToSpawn;
@@ -44,16 +50,55 @@ public class GameScreen : Screen
     /// </summary>
     public void PrepareCats(int count) => mCatCountToSpawn = count;
 
-    public override void Render(DrawingContext dc)
+    public override void OnAttach(Canvas entityLayer)
     {
-        if (mLevelPtr == null)
+        mLayer = entityLayer;
+        BuildSprites();
+    }
+
+    public override void OnDetach(Canvas entityLayer)
+    {
+        mMouseSprite?.Detach();
+        mMouseSprite = null;
+        foreach (EntitySprite sprite in mCatSprites)
+            sprite.Detach();
+        mCatSprites.Clear();
+        foreach (EntitySprite sprite in mTrapSprites)
+            sprite.Detach();
+        mTrapSprites.Clear();
+        mLayer = null;
+    }
+
+    public override void Sync()
+    {
+        mMouseSprite?.Sync();
+        foreach (EntitySprite sprite in mCatSprites)
+            sprite.Sync();
+        foreach (EntitySprite sprite in mTrapSprites)
+            sprite.Sync();
+    }
+
+    private void BuildSprites()
+    {
+        if (mLayer == null)
             return;
-        mLevelPtr.Draw(dc);
-        mMouse.Draw(dc);
-        for (int i = 0; i < mCats.Count; i++)
-            mCats[i].Draw(dc);
-        for (int i = 0; i < mTraps.Count; i++)
-            mTraps[i].Draw(dc);
+        mMouseSprite = new EntitySprite(mMouse);
+        mMouseSprite.Attach(mLayer);
+        mCatSprites.Clear();
+        foreach (Cat cat in mCats)
+        {
+            var sprite = new EntitySprite(cat);
+            sprite.Attach(mLayer);
+            mCatSprites.Add(sprite);
+        }
+        mTrapSprites.Clear();
+        foreach (Trap trap in mTraps)
+        {
+            var sprite = new EntitySprite(trap);
+            sprite.Attach(mLayer);
+            mTrapSprites.Add(sprite);
+        }
+        Sync();
     }
 
     public override void Update(double dt)

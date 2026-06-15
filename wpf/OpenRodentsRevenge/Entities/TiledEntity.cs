@@ -1,5 +1,3 @@
-using System.Windows;
-using System.Windows.Media;
 using OpenRodentsRevenge.Managers;
 
 namespace OpenRodentsRevenge.Entities;
@@ -54,16 +52,10 @@ public class TiledEntity
     public Texture? GetTexture() => mTexturePtr;
 
     /// <summary>
-    /// Draw the TiledEntity to the given drawing context.
-    /// Equivalent to the original SFML quad draw translated by the tile position.
+    /// Current texture alias (ex: "cat.png"). The renderer watches this to know
+    /// which sprite to show and when to swap it (e.g. cat -&gt; cheese).
     /// </summary>
-    public void Draw(DrawingContext dc)
-    {
-        if (mTexturePtr == null)
-            return;
-        var rect = new Rect(mX * TILE_SIZE, mY * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-        dc.DrawRectangle(mTexturePtr.Brush, null, rect);
-    }
+    public string TextureAlias => mTextureAlias;
 
     public int X => mX;
 

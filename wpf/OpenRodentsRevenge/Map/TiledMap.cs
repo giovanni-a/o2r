@@ -1,5 +1,3 @@
-using System.Windows;
-using System.Windows.Media;
 using OpenRodentsRevenge.Common;
 using OpenRodentsRevenge.Entities;
 using OpenRodentsRevenge.Logging;
@@ -11,9 +9,12 @@ namespace OpenRodentsRevenge.Map;
 /// A TiledMap handles a variable number of tiles to form a 2D map.
 /// Direct port of the original <c>TiledMap</c> class.
 ///
-/// The original used grouped SFML vertex arrays to batch the rendering; here the
-/// tiles are drawn directly through a <see cref="DrawingContext"/>, which is the
-/// idiomatic WPF equivalent and produces identical visual output.
+/// The original used grouped SFML vertex arrays to batch the rendering. This
+/// port keeps the map purely as data: the actual drawing is handled by the
+/// renderer (<see cref="OpenRodentsRevenge.Rendering.MapRenderer"/>), which only
+/// rebuilds its visuals when <see cref="Version"/> changes. That keeps the model
+/// free of any UI/toolkit dependency, which is what makes it portable to
+/// OpenSilver as-is.
 /// </summary>
 public class TiledMap
 {
@@ -33,11 +34,12 @@ public class TiledMap
 
     private readonly TiledMapPathfinder mPathfinder;
 
-    // The original batched all tiles into SFML vertex arrays (one draw call per
-    // texture). Here we cache the whole map as a single frozen drawing rebuilt
-    // only when tiles change, so per-frame rendering is a single DrawDrawing
-    // call instead of iterating every tile.
-    private DrawingGroup? mCachedMapDrawing;
+    /// <summary>
+    /// Bumped every time the tiles change (build, edit, push, resize). The
+    /// renderer compares this against its last-rendered value to decide whether
+    /// it needs to rebuild the (otherwise static) map visuals.
+    /// </summary>
+    public int Version { get; private set; }
 
     /// <summary>
     /// Default constructor.
@@ -66,7 +68,6 @@ public class TiledMap
     /// </summary>
     public bool BuildMap()
     {
-        var group = new DrawingGroup();
         for (int i = 0; i < mTiles.Count; i++)
         {
             List<Tile> list = mTiles[i];
@@ -79,18 +80,24 @@ public class TiledMap
                     Logger.Error($"Cannot build tile from character '{c}'");
                     return false;
                 }
-                Brush? brush = tile.GetTexture()?.Brush;
-                if (brush != null)
-                {
-                    var rect = new Rect(j * TiledEntity.TILE_SIZE, i * TiledEntity.TILE_SIZE,
-                                        TiledEntity.TILE_SIZE, TiledEntity.TILE_SIZE);
-                    group.Children.Add(new GeometryDrawing(brush, null, new RectangleGeometry(rect)));
-                }
             }
         }
-        group.Freeze();
-        mCachedMapDrawing = group;
+        Version++;
         return true;
+    }
+
+    /// <summary>
+    /// Enumerate every tile as (x, y, info), row-major. Used by the renderer to
+    /// build the map's vector geometry.
+    /// </summary>
+    public IEnumerable<(int x, int y, TileInfo info)> Tiles()
+    {
+        for (int i = 0; i < mTiles.Count; i++)
+        {
+            List<Tile> list = mTiles[i];
+            for (int j = 0; j < list.Count; j++)
+                yield return (j, i, list[j].GetInfo());
+        }
     }
 
     /// <summary>
@@ -174,15 +181,6 @@ public class TiledMap
         if (rebuildNow)
             BuildMap();
         mPathfinder.Reset();
-    }
-
-    /// <summary>
-    /// Draw the TiledMap to the given drawing context.
-    /// </summary>
-    public void Draw(DrawingContext dc)
-    {
-        if (mCachedMapDrawing != null)
-            dc.DrawDrawing(mCachedMapDrawing);
     }
 
     /// <summary>

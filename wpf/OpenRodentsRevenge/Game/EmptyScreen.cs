@@ -1,5 +1,4 @@
 using System.Windows.Input;
-using System.Windows.Media;
 using OpenRodentsRevenge.Map;
 
 namespace OpenRodentsRevenge.Game;
@@ -11,10 +10,6 @@ public class EmptyScreen : Screen
 {
     public EmptyScreen(IGameView window)
         : base(window)
-    {
-    }
-
-    public override void Render(DrawingContext dc)
     {
     }
 
