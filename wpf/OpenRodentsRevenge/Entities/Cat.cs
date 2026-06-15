@@ -16,6 +16,12 @@ namespace OpenRodentsRevenge.Entities;
 /// and cats were never even placed by <c>GameScreen</c>. The timing constants
 /// (<see cref="MOVE_TIME"/>, <see cref="WAITING_TIME"/>) and the chase/wait flow
 /// are kept from the original.
+///
+/// Matching the actual <i>Rodent's Revenge</i> rules: cats move in all 8
+/// directions, two cats never share a cell, and a cat counts as trapped only
+/// when it cannot move in any direction — where other cats (and cheese) act as
+/// walls too. Occupancy is supplied by <c>GameScreen</c> via the
+/// <c>occupied</c> set passed to <see cref="Update"/>.
 /// </summary>
 public class Cat : TiledEntity
 {
@@ -39,7 +45,10 @@ public class Cat : TiledEntity
     /// <summary>
     /// Update the cat. Moves at most once every <see cref="MOVE_TIME"/> seconds.
     /// </summary>
-    public void Update(TiledMap? level, Mouse mouse)
+    /// <param name="occupied">Cells occupied by other live cats. The cat treats
+    /// these as walls (so cats never stack and they block each other in), but it
+    /// may still step onto the mouse to catch it.</param>
+    public void Update(TiledMap? level, Mouse mouse, IReadOnlySet<Vec2i>? occupied = null)
     {
         if (level == null || IsCheese)
             return;
@@ -49,9 +58,9 @@ public class Cat : TiledEntity
             return;
         mTrackingClock.Restart();
 
-        // Try to track the mouse
+        // Try to track the mouse (routing around the other cats)
         var mousePos = new Vec2i(mouse.X, mouse.Y);
-        mTrackingPath = level.ComputePath(new Vec2i(mX, mY), mousePos);
+        mTrackingPath = level.ComputePath(new Vec2i(mX, mY), mousePos, occupied);
 
         // A solved path contains [current, step1, step2, ...]; index 1 is the
         // next tile to move onto (which may be the mouse itself = capture).
@@ -65,8 +74,8 @@ public class Cat : TiledEntity
         }
 
         // No path to the mouse: either wander, or wait if completely trapped.
-        List<Vec2i> moves = FreeNeighbors(level);
-        if (moves.Count == 0) // trapped
+        List<Vec2i> moves = FreeNeighbors(level, occupied);
+        if (moves.Count == 0) // trapped (can't move in any of the 8 directions)
         {
             if (!mBlocked)
             {
@@ -98,8 +107,11 @@ public class Cat : TiledEntity
         }
     }
 
-    /// <summary>The 8-adjacent ground tiles the cat can step onto.</summary>
-    private List<Vec2i> FreeNeighbors(TiledMap level)
+    /// <summary>
+    /// The 8-adjacent ground tiles the cat can step onto: walkable terrain not
+    /// occupied by another cat.
+    /// </summary>
+    private List<Vec2i> FreeNeighbors(TiledMap level, IReadOnlySet<Vec2i>? occupied)
     {
         var result = new List<Vec2i>();
         for (int i = mX - 1; i <= mX + 1; i++)
@@ -109,8 +121,12 @@ public class Cat : TiledEntity
                 if (i == mX && j == mY)
                     continue;
                 TileInfo info = level.GetTileInfo(i, j);
-                if (info.IsValid && info.Type == TileInfo.TYPE_GROUND)
-                    result.Add(new Vec2i(i, j));
+                if (!info.IsValid || info.Type != TileInfo.TYPE_GROUND)
+                    continue;
+                var pos = new Vec2i(i, j);
+                if (occupied != null && occupied.Contains(pos))
+                    continue; // another cat is sitting there
+                result.Add(pos);
             }
         }
         return result;

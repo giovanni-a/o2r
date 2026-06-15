@@ -191,12 +191,14 @@ public class TiledMap
     /// <summary>
     /// Compute a path between <paramref name="start"/> and <paramref name="end"/>.
     /// </summary>
-    public TilePosList ComputePath(Vec2i start, Vec2i end)
+    /// <param name="blocked">Optional set of occupied (but otherwise walkable)
+    /// cells to route around, e.g. the positions of other cats.</param>
+    public TilePosList ComputePath(Vec2i start, Vec2i end, IReadOnlySet<Vec2i>? blocked = null)
     {
         var path = new TilePosList();
         var rawPath = new List<Vec2i>();
         // Compute path
-        TiledMapPathfinder.Result result = mPathfinder.ComputePath(start, end, rawPath);
+        TiledMapPathfinder.Result result = mPathfinder.ComputePath(start, end, rawPath, blocked);
         if (result != TiledMapPathfinder.Result.SOLVED)
             return path; // if unsolved : return empty path
         // Convert to TilePosList

@@ -106,8 +106,24 @@ public class GameScreen : Screen
         if (mStatus != Status.Playing)
             return;
 
+        // Track which cells are occupied by cats so they never stack and they
+        // block each other in (both live cats and cheese act as walls for
+        // trapping). The set is kept current as each cat moves, so two cats
+        // can't claim the same cell in a single tick.
+        var occupied = new HashSet<Vec2i>();
+        foreach (Cat cat in mCats)
+            occupied.Add(new Vec2i(cat.X, cat.Y)); // includes cheese (static obstacles)
+
         for (int i = 0; i < mCats.Count; i++)
-            mCats[i].Update(mLevelPtr, mMouse);
+        {
+            Cat cat = mCats[i];
+            if (cat.IsCheese)
+                continue; // cheese stays put and keeps blocking
+            var from = new Vec2i(cat.X, cat.Y);
+            occupied.Remove(from); // a cat doesn't block itself
+            cat.Update(mLevelPtr, mMouse, occupied);
+            occupied.Add(new Vec2i(cat.X, cat.Y));
+        }
 
         // Lose : a (non-cheese) cat is on the mouse's tile.
         for (int i = 0; i < mCats.Count; i++)

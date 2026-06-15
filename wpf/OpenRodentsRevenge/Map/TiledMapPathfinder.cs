@@ -32,6 +32,13 @@ public class TiledMapPathfinder
 
     private readonly TiledMap mLevelRef;
 
+    // Cells that are walkable terrain but currently occupied (e.g. by other
+    // cats), set for the duration of a single ComputePath call. The cat AI uses
+    // this so cats path around each other instead of stacking. The end (target)
+    // cell is always allowed, so a cat can still path onto the mouse.
+    private IReadOnlySet<Vec2i>? mBlocked;
+    private Vec2i mEnd;
+
     public TiledMapPathfinder(TiledMap level)
     {
         mLevelRef = level;
@@ -40,11 +47,17 @@ public class TiledMapPathfinder
     /// <summary>
     /// Find a path between start and end positions in the given map.
     /// </summary>
-    public Result ComputePath(Vec2i start, Vec2i end, List<Vec2i> path)
+    /// <param name="blocked">Optional set of otherwise-walkable cells that are
+    /// currently occupied and must be avoided (the end cell is never blocked).</param>
+    public Result ComputePath(Vec2i start, Vec2i end, List<Vec2i> path,
+                              IReadOnlySet<Vec2i>? blocked = null)
     {
         path.Clear();
         if (start == end)
             return Result.START_END_SAME;
+
+        mBlocked = blocked;
+        mEnd = end;
 
         var open = new PriorityQueue<Vec2i, float>();
         var gScore = new Dictionary<Vec2i, float>();
@@ -129,7 +142,11 @@ public class TiledMapPathfinder
                 // If uncrossable : ignore
                 if (tileInfo.Type != TileInfo.TYPE_GROUND)
                     continue;
-                adjacent.Add(new Vec2i(i, j));
+                var neighbor = new Vec2i(i, j);
+                // If occupied by another entity (but not the target) : ignore
+                if (mBlocked != null && neighbor != mEnd && mBlocked.Contains(neighbor))
+                    continue;
+                adjacent.Add(neighbor);
             }
         }
     }
