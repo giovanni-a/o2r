@@ -2,8 +2,9 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Open Rodent's Revenge"
-        SizeToContent="WidthAndHeight"
-        ResizeMode="CanMinimize"
+        ResizeMode="CanResize"
+        Width="560" Height="640"
+        MinWidth="380" MinHeight="420"
         WindowStartupLocation="CenterScreen"
         Background="#202020">
     <DockPanel LastChildFill="True">
@@ -44,6 +45,8 @@
             </TextBlock>
         </Border>
 
-        <Border x:Name="canvasHost" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        <!-- Uniform Viewbox scales the vector-rendered game area to fill the
+             available space while preserving its aspect ratio. -->
+        <Viewbox x:Name="canvasViewbox" Stretch="Uniform" Margin="6"/>
     </DockPanel>
 </Window>

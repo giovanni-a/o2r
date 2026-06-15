@@ -54,10 +54,9 @@ public partial class MainWindow : Window
         prevSelectedAction = null;
         PopulateEditorBar();
 
-        // Init game canvas
+        // Init game canvas (hosted in a Viewbox that scales it uniformly)
         mGameCanvas = new GameCanvas();
-        mGameCanvas.RequestResize += ResizeCanvas;
-        canvasHost.Child = mGameCanvas;
+        canvasViewbox.Child = mGameCanvas;
 
         // Init game screens
         mGameScreen = new GameScreen(mGameCanvas);
@@ -293,21 +292,6 @@ public partial class MainWindow : Window
         if (prevSelectedAction != null && !ReferenceEquals(prevSelectedAction, action))
             prevSelectedAction.IsChecked = false;
         prevSelectedAction = action;
-    }
-
-    private void ResizeCanvas(int w, int h)
-    {
-        Rect screen = SystemParameters.WorkArea;
-        if (w >= screen.Width || h >= screen.Height)
-        {
-            MessageBox.Show(this,
-                "Level size is bigger than screen size, level cannot be displayed properly.",
-                "Size problem", MessageBoxButton.OK, MessageBoxImage.Warning);
-            mGameCanvas.Width = GameCanvas.DEFAULT_WIDTH;
-            mGameCanvas.Height = GameCanvas.DEFAULT_HEIGHT;
-            return;
-        }
-        // The window auto-sizes to the canvas (SizeToContent).
     }
 
     private void OnActionPlayLevel(object sender, RoutedEventArgs e)

@@ -44,9 +44,6 @@ public class GameCanvas : FrameworkElement, IGameView
     private static readonly TimeSpan FRAME_INTERVAL = TimeSpan.FromMilliseconds(16);
     private DispatcherTimer? mTimer;
 
-    /// <summary>Raised when the canvas wants the host window to resize.</summary>
-    public event Action<int, int>? RequestResize;
-
     public GameCanvas()
     {
         Focusable = true;
@@ -125,7 +122,8 @@ public class GameCanvas : FrameworkElement, IGameView
     }
 
     /// <summary>
-    /// Adjust canvas size to level, and ask for a host window resize.
+    /// Adjust the canvas's natural size to the level. The hosting Viewbox then
+    /// scales it uniformly to whatever space the (resizable) window provides.
     /// </summary>
     public void AdjustSizeToLevel()
     {
@@ -135,7 +133,6 @@ public class GameCanvas : FrameworkElement, IGameView
             h = (int)(mCurrentLevel.SizeY * TiledEntity.TILE_SIZE);
         Width = w;
         Height = h;
-        RequestResize?.Invoke(w, h);
         InvalidateVisual();
     }
 
@@ -177,7 +174,6 @@ public class GameCanvas : FrameworkElement, IGameView
 
         Width = DEFAULT_WIDTH;
         Height = DEFAULT_HEIGHT;
-        RequestResize?.Invoke((int)DEFAULT_WIDTH, (int)DEFAULT_HEIGHT);
     }
 
     private void OnUpdate()
